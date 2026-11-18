@@ -22,6 +22,11 @@ const scene = new THREE.Scene();
 scene.background=new THREE.Color(0xa4c4d0); scene.fog=new THREE.FogExp2(0xc1c9c1,0.0072);
 const camera = new THREE.PerspectiveCamera(76,innerWidth/innerHeight,0.045,260);
 camera.rotation.order='YXZ'; camera.position.set(-20,1.68,0);
+const previewCamera = new THREE.PerspectiveCamera(53, camera.aspect, 0.1, 430);
+const motionPreference = window.matchMedia('(prefers-reduced-motion: reduce)');
+const previewButton = $('toggleFlyover');
+let flyoverPaused = motionPreference.matches;
+let flyoverTime = 0, lastPreviewFrame = -Infinity;
 const renderer = new THREE.WebGLRenderer({antialias:true,powerPreference:'high-performance',stencil:false,alpha:false});
 renderer.setSize(innerWidth,innerHeight); renderer.setPixelRatio(Math.min(devicePixelRatio,1.4));
 renderer.outputColorSpace=THREE.SRGBColorSpace; renderer.toneMapping=THREE.ACESFilmicToneMapping;
@@ -129,6 +134,66 @@ function buildArena(){
 }
 buildArena();
 
+// The menu films the existing arena from above the container roofs.
+previewCamera.layers.enable(1);
+const previewSky = new THREE.Mesh(
+ new THREE.SphereGeometry(210, 32, 16),
+ new THREE.ShaderMaterial({
+  side: THREE.BackSide,
+  depthWrite: false,
+  uniforms: {sunDirection: {value: new THREE.Vector3(-0.55, 0.16, -0.82).normalize()}},
+  vertexShader: `
+   varying vec3 direction;
+   void main() {
+    direction = position;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+   }
+  `,
+  fragmentShader: `
+   varying vec3 direction;
+   uniform vec3 sunDirection;
+   void main() {
+    vec3 ray = normalize(direction);
+    float height = smoothstep(-0.09, 0.62, ray.y);
+    float facingSun = max(0.0, dot(ray, sunDirection));
+    vec3 color = mix(vec3(0.68, 0.49, 0.30), vec3(0.14, 0.29, 0.44), height);
+    color += vec3(0.43, 0.25, 0.10) * pow(facingSun, 13.0);
+    color += vec3(1.0, 0.56, 0.24) * pow(facingSun, 100.0);
+    color += vec3(3.3, 2.25, 1.07) * smoothstep(0.99959, 0.9998, facingSun);
+    gl_FragColor = vec4(color, 1.0);
+    #include <tonemapping_fragment>
+    #include <colorspace_fragment>
+   }
+  `
+ })
+);
+previewSky.layers.set(1);
+previewSky.renderOrder = -1;
+scene.add(previewSky);
+
+function renderFlyover() {
+ const sweep = flyoverTime * 0.16;
+ previewCamera.position.set(23 + 7 * Math.sin(sweep), 8.6 + 2.3 * Math.sin(sweep * 2), 25 + 3 * (Math.cos(sweep) - 1));
+ previewCamera.lookAt(-14, 5.3, -9);
+ const originalFogColor = scene.fog.color.getHex();
+ scene.fog.color.setHex(0xd4b693);
+ renderer.render(scene, previewCamera);
+ scene.fog.color.setHex(originalFogColor);
+}
+
+function setFlyoverPaused(paused) {
+ flyoverPaused = paused;
+ const label = paused ? 'Wznów kamerę' : 'Wstrzymaj kamerę';
+ previewButton.classList.toggle('is-paused', paused);
+ previewButton.setAttribute('aria-label', label);
+ previewButton.querySelector('.preview-label').textContent = label;
+ lastPreviewFrame = -Infinity;
+}
+setFlyoverPaused(flyoverPaused);
+previewButton.hidden = false;
+previewButton.addEventListener('click', () => setFlyoverPaused(!flyoverPaused));
+motionPreference.addEventListener('change', (event) => setFlyoverPaused(event.matches));
+
 // Uproszczony model postaci: tułów, oporządzenie, hełm, kończyny i broń.
 function buildCharacter(){
  const root=new THREE.Group();
@@ -196,9 +261,16 @@ function setQuality(which){
  renderer.setSize(innerWidth,innerHeight);
  const dust=scene.getObjectByName('dust');if(dust)dust.geometry.setDrawRange(0,cfg.dust);
  $('qualityText').textContent=quality.toUpperCase();
+ lastPreviewFrame = -Infinity;
 }
 $('quality').addEventListener('change',e=>setQuality(e.target.value));setQuality('balanced');
-window.addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);});
+window.addEventListener('resize', () => {
+ camera.aspect = previewCamera.aspect = innerWidth / innerHeight;
+ camera.updateProjectionMatrix();
+ previewCamera.updateProjectionMatrix();
+ renderer.setSize(innerWidth, innerHeight);
+ lastPreviewFrame = -Infinity;
+});
 
 // Syntetyzowany dźwięk: huk, klik mechanizmu i krótki pogłos. Przeglądarka wymaga gestu użytkownika.
 let audioCtx=null,noiseBuffer=null;
@@ -325,10 +397,14 @@ function finish(title,detail){
  $('endPanel').style.display='flex';$('pauseTip').style.display='none';
 }
 function backToMenu(){
- if(mode==='online')netSend({type:'leave'});
+ const wasOnline = mode === 'online';
  mode='menu';mouseDown=false;keys.clear();
+ if(wasOnline)netSend({type:'leave'});
+ document.exitPointerLock?.();
+ lastPreviewFrame = -Infinity;
  enemy.model&&(enemy.model.visible=false);$('endPanel').style.display='none';
  $('hud').style.display='none';$('mainMenu').style.display='flex';$('pauseTip').style.display='none';
+ ($('lobby').hidden ? $('openLobby') : $('lobbyTitle')).focus();
 }
 function togglePause(){
  pointerLocked=document.pointerLockElement===renderer.domElement;
@@ -336,7 +412,8 @@ function togglePause(){
  if(!pointerLocked)mouseDown=false;
 }
 document.addEventListener('pointerlockchange',togglePause);
-$('pauseTip').addEventListener('click',()=>renderer.domElement.requestPointerLock());
+$('resumeGame').addEventListener('click',()=>renderer.domElement.requestPointerLock());
+$('exitGame').addEventListener('click',backToMenu);
 renderer.domElement.addEventListener('click',()=>{
  if(['bot','online'].includes(mode)&&!pointerLocked)renderer.domElement.requestPointerLock();
 });
@@ -524,6 +601,16 @@ function animate(now){
  for(let i=FX.length-1;i>=0;i--){
    const f=FX[i];if(f.userData.exp<now){scene.remove(f);f.geometry.dispose();f.material.dispose();FX.splice(i,1);}
    else if(f.userData.vel){f.position.addScaledVector(f.userData.vel,dt);f.userData.vel.y-=dt*8;f.material.opacity=clamp((f.userData.exp-now)/400,0,1);}
+ }
+ if(mode === 'menu'){
+   if(!flyoverPaused && !document.hidden)flyoverTime += dt;
+   if(lastPreviewFrame === -Infinity || (!flyoverPaused && now - lastPreviewFrame >= 32)){
+     renderFlyover();
+     lastPreviewFrame = now;
+   }
+   fpsStart = now;
+   frames = 0;
+   return;
  }
  renderer.render(scene,camera);
  frames++;if(now-fpsStart>550){
