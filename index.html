@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Solar Duel</title>
+<style>
+:root { color-scheme: dark; --gold:#ffc16b; --line:#ffffff2a; --glow:#ffe2ac; }
+* {box-sizing:border-box} html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#0c1014;color:#f7f5ed;font-family:Inter,Segoe UI,Arial,sans-serif}
+canvas{display:block}
+#hud{position:fixed;inset:0;pointer-events:none;display:none}
+#vignette{position:absolute;inset:0;background:radial-gradient(ellipse at center,transparent 40%,#0007 110%)}
+#damageOverlay{position:absolute;inset:0;background:radial-gradient(ellipse,transparent 45%,#dd3131b0 100%);opacity:0;transition:opacity .3s}
+#crosshair{position:absolute;left:50%;top:50%;height:20px;width:20px;transform:translate(-50%,-50%)}
+#crosshair:before,#crosshair:after{content:'';position:absolute;background:#fff;box-shadow:0 0 4px #111}
+#crosshair:before{width:2px;height:16px;left:9px;top:2px} #crosshair:after{width:16px;height:2px;left:2px;top:9px}
+#crosshair.hit:before,#crosshair.hit:after{background:#ffb761}
+.hud-top{display:flex;justify-content:space-between;gap:16px;margin:20px 26px}
+.hud-box{background:#091018a8;border:1px solid #ffffff36;padding:10px 17px;min-width:172px;backdrop-filter:blur(8px);border-radius:8px}
+.hud-box strong{font-size:24px}.hud-box small{color:#d8d7cd;font-size:11px;letter-spacing:2px;display:block}
+#fps{font-size:14px;color:#9bedb5;font-variant-numeric:tabular-nums}
+#score{position:absolute;top:23px;left:50%;transform:translateX(-50%);text-align:center;font-weight:900;font-size:28px;letter-spacing:2px;text-shadow:0 2px 14px #000}
+#score small{display:block;font-size:10px;font-weight:600;letter-spacing:4px;color:var(--gold)}
+#hud-bottom{position:absolute;bottom:28px;left:28px;right:28px;display:flex;align-items:end;justify-content:space-between}
+#hp{font-size:42px;font-weight:900;font-variant-numeric:tabular-nums;text-shadow:0 2px 12px #000}
+#weaponName{font-size:13px;color:var(--gold);letter-spacing:3px;font-weight:bold;text-align:right}
+#ammo{font-size:45px;font-weight:900;letter-spacing:-2px;text-shadow:0 2px 12px #000;text-align:right}
+#hitNotice{position:absolute;top:58%;left:50%;transform:translateX(-50%);font-size:11px;letter-spacing:2px;color:#ffdcac;opacity:0;text-shadow:0 2px 8px #000}
+#toast{position:fixed;left:50%;top:100px;transform:translateX(-50%);font-size:14px;background:#090f16e8;border:1px solid #fff4;border-radius:8px;padding:12px 18px;z-index:25;opacity:0;transition:opacity .2s;pointer-events:none;white-space:nowrap;max-width:85vw;text-overflow:ellipsis;overflow:hidden}
+.eyebrow{color:var(--gold);font-size:12px;letter-spacing:3px;font-weight:800}
+input,select{height:43px;background:#090e13;color:#fff;border:1px solid #ffffff4f;border-radius:7px;padding:0 13px;font-size:14px;min-width:0;width:100%;outline:none}
+input:focus,select:focus{border-color:var(--gold)}
+button{min-height:43px;border-radius:7px;padding:10px 18px;font-size:13px;letter-spacing:.5px;font-weight:800;border:none;background:var(--gold);color:#121821;cursor:pointer;transition:filter .15s, transform .12s}
+button:hover{filter:brightness(1.1);transform:translateY(-1px)}
+button:disabled{cursor:not-allowed;opacity:.45;transform:none}
+button.secondary{background:#24303c;color:#fff;border:1px solid #ffffff40}
+.flex{display:flex;align-items:end;gap:9px}.flex>.grow{flex:1}
+#invitePrompt{display:none;position:fixed;z-index:20;top:22px;right:22px;background:#192535f5;border:1px solid var(--gold);border-radius:12px;padding:20px;box-shadow:0 20px 80px #0009;width:min(340px,90vw)}
+#invitePrompt strong{font-size:20px;color:var(--gold)}
+#invitePrompt p{font-size:13px;line-height:1.5;color:#e0e5e9}
+#pauseTip{display:none;position:fixed;z-index:9;left:50%;bottom:20%;transform:translateX(-50%);background:#0a0c11df;border:1px solid #fff3;color:#fff;padding:14px 24px;border-radius:8px;text-align:center;white-space:nowrap}
+#endPanel{display:none;position:fixed;z-index:9;inset:0;align-items:center;justify-content:center;background:#030609c9}
+#endPanel .endCard{padding:32px;text-align:center;min-width:290px;background:#18232df8;border:1px solid #ffc16b66;border-radius:14px}
+#endTitle{font-size:29px;font-weight:900}#endDetail{font-size:14px;color:#ccd7dc;margin:15px 0 25px}
+@media(max-width:690px){.hud-top{margin:14px}.hud-box{min-width:110px;padding:8px}#score{top:78px}#hud-bottom{left:15px;right:15px}}
+#game{position:fixed;inset:0;background:radial-gradient(ellipse at 76% 24%,#b98754 0%,#645047 34%,#252a2e 72%);overflow:hidden}
+#game canvas{width:100%;height:100%}
+[hidden]{display:none!important}
+#mainMenu{
+ --ink:#f6f1e7;
+ --blue:#235be9;
+ --inset:clamp(24px,7.4vw,144px);
+ position:fixed;inset:0;z-index:10;display:flex;flex-direction:column;overflow-y:auto;
+ color:var(--ink);isolation:isolate;
+}
+.menu-shade{
+ position:fixed;inset:0;z-index:-1;pointer-events:none;
+ background:linear-gradient(91deg,#101820ee 0%,#101820b5 31%,#10182045 61%,transparent 87%),
+            linear-gradient(0deg,#101820e6,transparent 24%,transparent 87%,#10182034);
+}
+.menu-content{flex:1 0 auto;display:grid;align-content:center;justify-items:start;padding:52px var(--inset) 32px}
+.start-screen{width:100%}
+.wordmark{
+ margin:0 0 35px;font-family:"Arial Black","Segoe UI",Arial,sans-serif;
+ font-size:clamp(3rem,10.8vw,11rem);line-height:.86;font-weight:950;letter-spacing:-.095em;
+ transform:skewX(-8deg);transform-origin:left bottom;text-shadow:0 6px 40px #040d1970;
+ white-space:nowrap;
+}
+.wordmark span{color:#fff4de}
+.play-button,.primary{
+ display:inline-flex;align-items:center;justify-content:space-between;gap:30px;
+ background:var(--blue);color:#fff;border:1px solid #78a4ff78;
+}
+.play-button{
+ width:min(210px,100%);min-height:62px;padding:12px 21px;font-size:22px;font-weight:750;
+ border-radius:3px;letter-spacing:0;box-shadow:0 8px 24px #0d258e59;
+}
+.play-button span,.primary span{font-size:1.25em;line-height:1}
+.menu-footer{
+ display:flex;align-items:center;justify-content:space-between;gap:16px;margin:0 var(--inset);
+ border-top:1px solid #fff4;min-height:66px;
+}
+.arena-caption{font-size:12px;font-weight:700;letter-spacing:.13em;text-transform:uppercase;color:#f1e8d9}
+.preview-control,.menu-link{background:transparent;color:var(--ink);padding:8px 0;border-radius:0;letter-spacing:0}
+.preview-control{display:inline-flex;align-items:center;gap:9px;font-weight:600}
+.preview-icon{display:inline-block;width:10px;height:12px;border-inline:3px solid currentColor}
+.preview-control.is-paused .preview-icon{
+ height:0;width:0;border:0;border-block:6px solid transparent;border-left:9px solid currentColor;
+}
+.lobby{
+ width:min(100%,418px);border:1px solid #ffffff30;border-radius:5px;padding:24px;
+ background:#141e27f5;box-shadow:0 20px 60px #0007;
+}
+.lobby h2{font-size:31px;letter-spacing:-.035em;margin:8px 0 21px}
+.lobby h2:focus{outline:none}
+.lobby label{display:block;font-size:13px;font-weight:600;margin-bottom:6px;color:#e2e8ee}
+.lobby input,.lobby select{height:44px;background:#0c141c;border-radius:4px;border-color:#7383958c}
+.mode-buttons,.input-row{display:flex;gap:8px}
+.mode-buttons button{flex:1;background:#263442;color:#e3ebf4;border:1px solid #63768b80;border-radius:4px;padding-inline:9px}
+.mode-buttons button[aria-pressed="true"]{background:#1a2b48;border-color:#8ab3ff;color:#fff}
+.mode-options{margin-top:20px}
+.mode-options .primary{border-radius:4px}
+#botStart{width:100%}
+#onlineOptions .input-row{margin-bottom:12px}
+#onlineStatus,#onlineNames,#identityText{font-size:12px;line-height:1.45;color:#c5d2de;overflow-wrap:anywhere}
+#onlineNames:not(:empty){margin-top:5px}
+#identityText:not(:empty){margin:-5px 0 12px}
+.quality-row{display:flex;align-items:center;justify-content:space-between;gap:12px;border-top:1px solid #fff3;margin-top:22px;padding-top:15px}
+.quality-row label{margin:0}
+.quality-row select{width:auto;max-width:70%}
+#gameLoadError{align-self:start;max-width:390px;background:#16202be8;padding:12px 15px;margin:20px 0 0}
+#mainMenu :is(button,input,select):focus-visible,#pauseTip button:focus-visible{outline:2px solid #a9c9ff;outline-offset:3px}
+#mainMenu button:disabled:hover{filter:none}
+@media(max-width:600px){
+ .menu-shade{background:linear-gradient(90deg,#101820bd,#1018202c),linear-gradient(0deg,#101820e6,transparent 62%)}
+ .menu-content{padding-top:33px}
+ .wordmark{font-size:clamp(2.65rem,12.1vw,5rem);margin-bottom:26px}
+ .lobby{padding:18px}
+ .menu-footer{min-height:60px}
+ .arena-caption{font-size:10px}
+}
+@media(prefers-reduced-motion:reduce){#mainMenu button{transition:none}}
+</style>
+</head>
+<body>
+<div id="game"></div>
+<div id="hud">
+ <div id="vignette"></div><div id="damageOverlay"></div><div id="crosshair"></div><div id="hitNotice">TRAFIENIE</div>
+ <div class="hud-top"><div class="hud-box"><small>STATUS</small><strong id="matchMode">TRENING</strong><div id="fps">FPS --</div></div><div class="hud-box" style="text-align:right"><small>GRAFIKA</small><strong id="qualityText" style="font-size:16px">BALANCED</strong><small>ESC — KURSOR</small></div></div>
+ <div id="score"><small>PIERWSZY DO 10</small><span id="scoreText">0 : 0</span></div>
+ <div id="hud-bottom"><div><div style="font-size:11px;color:#f6d39e;letter-spacing:2px">ZDROWIE</div><div id="hp">100 <span style="font-size:18px">HP</span></div><div style="font-size:11px;color:#ccd3d8">WASD ruch • SHIFT sprint • SPACJA skok</div></div><div><div id="weaponName">KARABIN</div><div id="ammo">30 / ∞</div><div style="font-size:11px;color:#cbd2d8;text-align:right">1 / 2 / 3 broń • R przeładuj • LPM atak</div></div></div>
+</div>
+<div id="toast" role="status"></div>
+<div id="pauseTip"><button class="secondary" id="resumeGame">Wróć do gry</button> <button class="secondary" id="exitGame">Menu</button></div>
+<div id="endPanel"><div class="endCard"><div class="eyebrow">SOLAR DUEL // WYNIK</div><div id="endTitle">KONIEC RUNDY</div><p id="endDetail"></p><button id="backMenu">WRÓĆ DO MENU</button></div></div>
+<div id="invitePrompt"><div class="eyebrow">ZAPROSZENIE DO 1V1</div><p><strong id="inviteName"></strong> chce z Tobą zagrać!</p><div class="flex"><button id="acceptInvite">AKCEPTUJ</button><button class="secondary" id="declineInvite">ODRZUĆ</button></div></div>
+<div id="mainMenu">
+ <div class="menu-shade" aria-hidden="true"></div>
+ <div class="menu-content">
+  <div id="startScreen" class="start-screen">
+   <h1 class="wordmark">Solar <span>Duel</span></h1>
+   <button class="play-button" id="openLobby" aria-controls="lobby">
+    Graj <span aria-hidden="true">→</span>
+   </button>
+   <noscript>Włącz JavaScript, aby uruchomić grę.</noscript>
+  </div>
+  <section id="lobby" class="lobby" aria-labelledby="lobbyTitle" hidden>
+   <button id="closeLobby" class="menu-link"><span aria-hidden="true">←</span> Ekran startowy</button>
+   <h2 id="lobbyTitle" tabindex="-1">Wybierz tryb</h2>
+   <div class="mode-buttons" role="group" aria-label="Tryb gry">
+    <button id="selectBot" aria-pressed="true" aria-controls="soloOptions">Trening z botem</button>
+    <button id="selectOnline" aria-pressed="false" aria-controls="onlineOptions">1v1 online</button>
+   </div>
+   <div id="soloOptions" class="mode-options">
+    <button id="botStart" class="primary">Graj z botem <span aria-hidden="true">→</span></button>
+   </div>
+   <div id="onlineOptions" class="mode-options" hidden>
+    <label for="nickname">Twój nick</label>
+    <div class="input-row">
+     <input id="nickname" maxlength="18" placeholder="3–18 znaków" autocomplete="off" spellcheck="false">
+     <button id="connect" class="primary">Połącz</button>
+    </div>
+    <div id="identityText"></div>
+    <label for="inviteNick">Nick znajomego</label>
+    <div class="input-row">
+     <input id="inviteNick" maxlength="18" autocomplete="off" spellcheck="false">
+     <button id="sendInvite" class="primary" disabled>Zaproś</button>
+    </div>
+    <div id="onlineStatus" role="status">Nie połączono z serwerem</div>
+    <div id="onlineNames"></div>
+   </div>
+   <div class="quality-row">
+    <label for="quality">Grafika</label>
+    <select id="quality">
+     <option value="performance">Wydajność</option>
+     <option value="balanced" selected>Zbalansowana</option>
+     <option value="cinematic">Filmowa</option>
+    </select>
+   </div>
+  </section>
+  <p id="gameLoadError" role="status" hidden>Nie udało się wczytać areny 3D. Odśwież stronę i sprawdź, czy przeglądarka obsługuje WebGL 2.</p>
+ </div>
+ <footer class="menu-footer">
+  <span class="arena-caption">Arena treningowa</span>
+  <button id="toggleFlyover" class="preview-control" type="button" aria-label="Wstrzymaj kamerę" hidden>
+   <span class="preview-icon" aria-hidden="true"></span><span class="preview-label">Wstrzymaj kamerę</span>
+  </button>
+ </footer>
+</div>
+<script>
+ const startScreen = document.getElementById('startScreen');
+ const lobby = document.getElementById('lobby');
+ const openLobby = document.getElementById('openLobby');
+ const closeLobby = document.getElementById('closeLobby');
+ const selectBot = document.getElementById('selectBot');
+ const selectOnline = document.getElementById('selectOnline');
+ const soloOptions = document.getElementById('soloOptions');
+ const onlineOptions = document.getElementById('onlineOptions');
+
+ function showLobby(show) {
+  startScreen.hidden = show;
+  lobby.hidden = !show;
+  (show ? document.getElementById('lobbyTitle') : openLobby).focus();
+ }
+ function showOnline(show) {
+  selectBot.setAttribute('aria-pressed', String(!show));
+  selectOnline.setAttribute('aria-pressed', String(show));
+  soloOptions.hidden = show;
+  onlineOptions.hidden = !show;
+ }
+ openLobby.addEventListener('click', () => showLobby(true));
+ closeLobby.addEventListener('click', () => showLobby(false));
+ selectBot.addEventListener('click', () => showOnline(false));
+ selectOnline.addEventListener('click', () => showOnline(true));
+ lobby.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape') showLobby(false);
+ });
+ import('/game.js').catch((error) => {
+  console.error(error);
+  document.getElementById('gameLoadError').hidden = false;
+  document.getElementById('botStart').disabled = true;
+  document.getElementById('connect').disabled = true;
+ });
+</script>
+</body></html>
