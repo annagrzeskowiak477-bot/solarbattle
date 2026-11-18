@@ -9,12 +9,15 @@ const { WebSocketServer } = require('ws');
 const PORT = Number(process.env.PORT) || 3000;
 const ROOT = path.join(__dirname, 'public');
 const MIME = {'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.ico':'image/x-icon'};
+const threeModules = new Map([
+  ['/vendor/three.module.js', path.join(__dirname, 'node_modules/three/build/three.module.js')],
+  ['/vendor/three.core.js', path.join(__dirname, 'node_modules/three/build/three.core.js')]
+]);
 const server = http.createServer((req, res) => {
   const route = new URL(req.url, 'http://localhost').pathname;
-  const file = route === '/vendor/three.module.js'
-    ? path.join(__dirname, 'node_modules/three/build/three.module.js')
-    : path.join(ROOT, route === '/' ? 'index.html' : route);
-  if (!file.startsWith(ROOT + path.sep) && file !== path.join(ROOT, 'index.html') && route !== '/vendor/three.module.js') {
+  const vendorFile = threeModules.get(route);
+  const file = vendorFile || path.join(ROOT, route === '/' ? 'index.html' : route);
+  if (!vendorFile && !file.startsWith(ROOT + path.sep)) {
     res.writeHead(403); return res.end('Forbidden');
   }
   fs.readFile(file, (err, data) => {
