@@ -1,0 +1,9 @@
+{
+  "name": "solar-duel-prototype",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Solar Duel — prototyp strzelanki FPS z zaproszeniami 1v1",
+  "scripts": { "start": "node server.js" },
+  "dependencies": { "ws": "^8.18.0", "three": "^0.181.0" },
+  "engines": { "node": ">=18" }
+}
